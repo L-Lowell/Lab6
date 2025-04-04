@@ -361,8 +361,6 @@ rank_results(wf, rank_metric = "rsq", select_best = TRUE)
 
 #Question 3: Build a xgboost and neural network model using boost_tree
 ```{r}
-install.packages("xgboost")
-
 xgb_model <- boost_tree() %>%
   set_engine("xgboost") %>%
   set_mode("regression")
@@ -403,14 +401,7 @@ wf_results <- workflow_map(wf_results, "fit_resamples", resamples = camels_cv)
 collect_metrics(wf_results)
 ```
 
-```{r}
-wf_results <- wf %>%
-  workflow_map("fit_resamples", resamples = camels_cv)
-
-collect_metrics(wf_results)
-
-```
-###Now I have the model evaluations, I can run them through a test to see what I will move forward with:
+###Now I have the model results, I can run them through an evaluation to see what I will move forward with:
 
 ```{r}
 rank_results(wf_results, rank_metric = "rsq", select_best = TRUE)
@@ -418,7 +409,7 @@ rank_results(wf_results, rank_metric = "rsq", select_best = TRUE)
 
 
 ##Which of the 4 models would you move forward with?
-###I will move forward with recipe_nnet_model as that was the most accurate.
+###I will move forward with the neural network model as it performed best in cross-validation.
 
 #Question 4a: Data Prep / Data Splitting
 ###Borrowing from the workflow presented above, build your own complete ML pipeline to predict mean streamflow using the CAMELS dataset. A successful model will have a R-squared value > 0.9.
@@ -447,7 +438,12 @@ camels_cv_4 <- vfold_cv(camels_train_4, v = 10)
 
 #Question 4b: Recipe 
 ###Define a formula you want to use to predict logQmean
-Describe in words why you are choosing the formula you are. Consult the downloaded PDF for the data to help you make this decision.
+
+##Describe in words why you are choosing the formula you are. Consult the downloaded PDF.
+
+######I chose aridity and p_mean as predictors based the CAMELS showing that precipitation and aridity directly influence streamflow.
+
+##for the data to help you make this decision.
 Build a recipe that you feel handles the predictors chosen well
 
 ```{r}
@@ -506,22 +502,23 @@ wf_set_4 <- workflow_set(
 ) %>%
   workflow_map("fit_resamples", resamples = camels_cv_4)
 
-autoplot(wf_set_4)
-
-
 ```
-
 
 #Question 4e: Evaluation 
 ###Use autoplot and rank_results to compare the models.
 Describe what model you think is best and why!
 
 ```{r}
-autoplot(wf_set_4)
-
 rank_results(wf_set_4, rank_metric = "rsq", select_best = TRUE)
 ```
 
+
+```{r}
+
+autoplot(wf_set_4)
+
+```
+### As we can see, camels_recipe_4_nnet_model is the best model again in terms of rsq.
 
 #Question 4f: Extract and Evaluate 
 ###Build a workflow (not workflow set) with your favorite model, recipe, and training data
@@ -531,15 +528,15 @@ Create a plot of the observed vs predicted values with clear title, axis labels,
 Describe what you think of the results!
 
 ```{r}
-final_nnet_wf_4 <- workflow() %>%
+final_rf_wf <- workflow() %>%
   add_recipe(rec_4) %>%
-  add_model(nnet_model_4) %>%
+  add_model(rf_model_4) %>%
   fit(data = camels_train_4)
 
 nnet_test_preds_4 <- augment(final_nnet_wf_4, new_data = camels_test_4)
 
-metrics(nnet_test_preds_4, truth = logQmean, estimate = .pred)
-
+rf_test_preds <- augment(final_rf_wf, new_data = camels_test_4)
+metrics(rf_test_preds, truth = logQmean, estimate = .pred)
 ```
 
 ```{r}
@@ -555,4 +552,4 @@ ggplot(nnet_test_preds_4, aes(x = logQmean, y = .pred, color = aridity)) +
     color = "Aridity")
 ```
 
-
+###I think the results are too scattered ans heavily skewed so the data is not evenly spaced.  That said it appears to be more accurate than the other models used.
