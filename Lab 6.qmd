@@ -81,7 +81,7 @@ p3 <- ggplot(data = camels, aes(x = gauge_lon, y = gauge_lat)) +
 p2 + p3
 ```
 
-#Question 3: Build a xgboost and neural network model 
+
 ##Model Preparation
 
 ```{r}
@@ -90,7 +90,7 @@ camels |>
   drop_na() |> 
   cor()
 ```
-###Looks like the expected results from the assignments
+###Looks like the expected results from the assignments. 
 
 ```{r}
 # Create a scatter plot of aridity vs rainfall
@@ -109,7 +109,7 @@ ggplot(camels, aes(x = aridity, y = p_mean)) +
        y = "Rainfall",
        color = "Mean Flow")
 ```
-###The relationship is seen here just like in the assignment.
+###The relationship is seen here just like in the assignment.   There is a relationship between rainfall but it is  not linear.
 
 ```{r}
 ggplot(camels, aes(x = aridity, y = p_mean)) +
@@ -126,7 +126,7 @@ ggplot(camels, aes(x = aridity, y = p_mean)) +
        y = "Rainfall",
        color = "Mean Flow")
 ```
-###Log scaled made a more leniar relationship.
+###Log scaled made a more leniar relationship, but clustared and unevenly distributed.
 
 ```{r}
 ggplot(camels, aes(x = aridity, y = p_mean)) +
@@ -146,8 +146,11 @@ ggplot(camels, aes(x = aridity, y = p_mean)) +
        y = "Rainfall",
        color = "Mean Flow") 
 ```
-###Definitely more evenly spread just like expected.
+###Definitely more evenly spread after being skewed, just like expected.
 
+
+##Model building
+###set seed for reproducabilty:
 ```{r}
 set.seed(123)
 # Bad form to perform simple transformations on the outcome variable within a 
@@ -159,9 +162,12 @@ camels <- camels |>
 camels_split <- initial_split(camels, prop = 0.8)
 camels_train <- training(camels_split)
 camels_test  <- testing(camels_split)
-
+###use 80% of the data for training and 20% for testing with no stratification.
 camels_cv <- vfold_cv(camels_train, v = 10)
+### 10-fold cross validation dataset to help us evaluate multi-model setups.
 ```
+
+###Separately we have used the recipe function to define a series of data preprocessing steps:
 
 ```{r}
 # Create a recipe to preprocess the data
@@ -173,6 +179,8 @@ rec <-  recipe(logQmean ~ aridity + p_mean, data = camels_train) %>%
   # Drop any rows with missing values in the pred
   step_naomit(all_predictors(), all_outcomes())
 ```
+
+###fitting a linear model to the data. 
 
 ```{r}
 # Prepare the data
@@ -195,15 +203,22 @@ summary(lm(logQmean ~ aridity + p_mean + aridity_x_p_mean, data = baked_data))
 
 ###Just as expected again
 
+##A Model's ability to predict new data (incorrect tests)
+###Using the wrong verion augment function to add predicted values to the test data won't work because the recipe has not been applied
+
 ```{r}
 nrow(camels_test)
 nrow(camels_train)
 
 ```
+###look how many more test vs train
+
 ```{r}
-broom::augment(lm_base, data = camels_test)
+#broom::augment(lm_base, data = camels_test)
 ```
-###I was worried there for a second, it looks like an error was expected
+###As expected, there is an erro, I will put it behind a "#" so that I can render this assignment.
+
+###Using the predict function to directly test the data without recipe onject we also see issues
 
 ```{r}
 camels_test$p2 = predict(lm_base, newdata = camels_test)
@@ -220,17 +235,22 @@ ggplot(camels_test, aes(x = p2, y = logQmean)) +
        y = "Observed Log Mean Flow") + 
   theme_linedraw()
 ```
-###This is just like the assignment!
+###As expected.
+
+##Correct version
+###prep -> bake -> predict; using the prep and bake functions with the recipe object to make a prediction. 
 
 ```{r}
 test_data <-  bake(prep(rec), new_data = camels_test)
 test_data$lm_pred <- predict(lm_base, newdata = test_data)
 ```
-
+##Evaluating the model
+###calculates common regression metrics such as RMSE, R-squared, and MAE between the observed and predicted values with metrics.
 ```{r}
 metrics(test_data, truth = logQmean, estimate = lm_pred)
 ```
 
+###model of the observed vs predicted
 ```{r}
 ggplot(test_data, aes(x = logQmean, y = lm_pred, colour = aridity)) +
   # Apply a gradient color scale
@@ -243,8 +263,7 @@ ggplot(test_data, aes(x = logQmean, y = lm_pred, colour = aridity)) +
        y = "Predicted Log Mean Flow",
        color = "Aridity")
 ```
-###Looks the same just with changed colors since the other looked a bit off to me.
-###This really was a lot of work for one single graph...
+###This really was a lot of work for one single fragile graph that can't test other algarithsms.
 
 ##Better approach: Workflow
 
@@ -309,6 +328,8 @@ rf_wf <- workflow() %>%
   fit(data = camels_train) 
 ```
 
+
+
 ```{r}
 rf_data <- augment(rf_wf, new_data = camels_test)
 dim(rf_data)
@@ -337,9 +358,201 @@ autoplot(wf)
 ```{r}
 rank_results(wf, rank_metric = "rsq", select_best = TRUE)
 ```
+
+#Question 3: Build a xgboost and neural network model using boost_tree
+```{r}
+install.packages("xgboost")
+
+xgb_model <- boost_tree() %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+
+```
+
+##build a neural network model using the nnet engine from the baguette package using the bag_mlp function
+
+```{r}
+nnet_model <- bag_mlp() %>%
+  set_engine("nnet") %>%
+  set_mode("regression")
+
+```
+
+##Add this to the above workflow
+```{r}
+wf_results <- workflow_set(
+  preproc = list(camels_recipe = rec),
+  models = list(
+    lm_model = lm_model,
+    rf_model = rf_model,
+    xgb_model = xgb_model,
+    nnet_model = nnet_model
+  )
+)
+
+# Now apply fit_resamples and ASSIGN it
+wf_results <- workflow_map(wf_results, "fit_resamples", resamples = camels_cv)
+
+```
+
+
+
+##Evaluate the model and compare it to the linear and random forest models
+
+```{r}
+collect_metrics(wf_results)
+```
+
+```{r}
+wf_results <- wf %>%
+  workflow_map("fit_resamples", resamples = camels_cv)
+
+collect_metrics(wf_results)
+
+```
+###Now I have the model evaluations, I can run them through a test to see what I will move forward with:
+
+```{r}
+rank_results(wf_results, rank_metric = "rsq", select_best = TRUE)
+```
+
+
+##Which of the 4 models would you move forward with?
+###I will move forward with recipe_nnet_model as that was the most accurate.
+
 #Question 4a: Data Prep / Data Splitting
+###Borrowing from the workflow presented above, build your own complete ML pipeline to predict mean streamflow using the CAMELS dataset. A successful model will have a R-squared value > 0.9.
+
+```{r}
+set.seed(13)
+camels <- camels |> 
+  mutate(logQmean = log(q_mean))
+```
+
+
+##Data Spliting
+###Set a seed for reproducible
+Create an initial split with 75% used for training and 25% for testing
+Extract your training and testing sets
+Build a 10-fold CV dataset as well
+
+```{r}
+camels_split_4 <- initial_split(camels, prop = 0.75)
+camels_train_4 <- training(camels_split_4)
+camels_test_4  <- testing(camels_split_4)
+
+camels_cv_4 <- vfold_cv(camels_train_4, v = 10)
+```
+
+
 #Question 4b: Recipe 
+###Define a formula you want to use to predict logQmean
+Describe in words why you are choosing the formula you are. Consult the downloaded PDF for the data to help you make this decision.
+Build a recipe that you feel handles the predictors chosen well
+
+```{r}
+rec_4 <- recipe(logQmean ~ aridity + p_mean, data = camels_train_4) %>%
+  # Log transform the predictor variables (aridity and p_mean)
+  step_log(all_predictors()) %>%
+  # Add an interaction term between aridity and p_mean
+  step_interact(terms = ~ aridity:p_mean) |> 
+  # Drop any rows with missing values in the pred
+  step_naomit(all_predictors(), all_outcomes())
+```
+
+
 #Question 4c: Define 3 models 
+###Define a random forest model using the rand_forest function
+Set the engine to ranger and the mode to regression
+Define two other models of your choice
+
+```{r}
+lm_model_4 <- linear_reg() %>%
+  # define the engine
+  set_engine("lm") %>%
+  # define the mode
+  set_mode("regression")
+
+rf_model_4 <- rand_forest() %>%
+  set_engine("ranger", importance = "impurity") %>%
+  set_mode("regression")
+
+```
+###I need a thrid model...
+###I will move forward with recipe_nnet_model was the most accurate in Q3, so I will use it here.
+
+```{r}
+nnet_model_4 <- bag_mlp() %>%
+  set_engine("nnet") %>%
+  set_mode("regression")
+
+```
+
+
 #Question 4d: workflow set 
+###Create a workflow object
+Add the recipe
+Add the model(s)
+Fit the model to the resamples
+
+```{r}
+wf_set_4 <- workflow_set(
+  preproc = list(camels_recipe_4 = rec_4),  # named recipe
+  models = list(
+    lm_model   = lm_model_4,
+    rf_model   = rf_model_4,
+    nnet_model = nnet_model_4
+  )
+) %>%
+  workflow_map("fit_resamples", resamples = camels_cv_4)
+
+autoplot(wf_set_4)
+
+
+```
+
+
 #Question 4e: Evaluation 
+###Use autoplot and rank_results to compare the models.
+Describe what model you think is best and why!
+
+```{r}
+autoplot(wf_set_4)
+
+rank_results(wf_set_4, rank_metric = "rsq", select_best = TRUE)
+```
+
+
 #Question 4f: Extract and Evaluate 
+###Build a workflow (not workflow set) with your favorite model, recipe, and training data
+Use fit to fit all training data to the model
+Use augment to make predictions on the test data
+Create a plot of the observed vs predicted values with clear title, axis labels, and a compelling color scale
+Describe what you think of the results!
+
+```{r}
+final_nnet_wf_4 <- workflow() %>%
+  add_recipe(rec_4) %>%
+  add_model(nnet_model_4) %>%
+  fit(data = camels_train_4)
+
+nnet_test_preds_4 <- augment(final_nnet_wf_4, new_data = camels_test_4)
+
+metrics(nnet_test_preds_4, truth = logQmean, estimate = .pred)
+
+```
+
+```{r}
+ggplot(nnet_test_preds_4, aes(x = logQmean, y = .pred, color = aridity)) +
+  geom_point() +
+  geom_abline(linetype = 2) +
+  scale_color_viridis_c() +
+  theme_linedraw() +
+  labs(
+    title = "Neural Net: Observed vs Predicted Log Mean Flow",
+    x = "Observed Log Mean Flow",
+    y = "Predicted Log Mean Flow",
+    color = "Aridity")
+```
+
+
