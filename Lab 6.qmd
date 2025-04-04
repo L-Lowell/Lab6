@@ -528,28 +528,29 @@ Create a plot of the observed vs predicted values with clear title, axis labels,
 Describe what you think of the results!
 
 ```{r}
-final_rf_wf <- workflow() %>%
-  add_recipe(rec_4) %>%
-  add_model(rf_model_4) %>%
+final_nnet_wf_4 <- extract_workflow(wf_set_4, "camels_recipe_4_nnet_model")
+final_nnet_wf_4 <- final_nnet_wf_4 %>%
   fit(data = camels_train_4)
 
 nnet_test_preds_4 <- augment(final_nnet_wf_4, new_data = camels_test_4)
 
-rf_test_preds <- augment(final_rf_wf, new_data = camels_test_4)
-metrics(rf_test_preds, truth = logQmean, estimate = .pred)
+# View metrics
+metrics(nnet_test_preds_4, truth = logQmean, estimate = .pred)
+
 ```
 
 ```{r}
 ggplot(nnet_test_preds_4, aes(x = logQmean, y = .pred, color = aridity)) +
-  geom_point() +
-  geom_abline(linetype = 2) +
-  scale_color_viridis_c() +
+  geom_point(alpha = 0.7) +
+  geom_abline(linetype = "dashed", color = "red") +
+  scale_color_viridis_c(trans = "log") +
   theme_linedraw() +
   labs(
     title = "Neural Net: Observed vs Predicted Log Mean Flow",
     x = "Observed Log Mean Flow",
     y = "Predicted Log Mean Flow",
-    color = "Aridity")
+    color = "Aridity (log scale)"
+  )
 ```
 
-###I think the results are too scattered ans heavily skewed so the data is not evenly spaced.  That said it appears to be more accurate than the other models used.
+###I think the results are slighlty scattered but far ess and more evenly spaced than the other prediction models graphed.  
