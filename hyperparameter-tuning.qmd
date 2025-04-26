@@ -1,0 +1,342 @@
+---
+title: "hyperparameter-tuning"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(powerjoin)
+library(glue)
+library(vip)
+library(baguette)
+library(skimr)
+library(ggpubr)
+library(rsample)
+library(recipes)
+library(dplyr)
+root  <- 'https://gdex.ucar.edu/dataset/camels/file'
+```
+
+```{r}
+#Read in the data using map, read_delim() and powerjoin::power_full_join(). If you need a refresher on this please refer to lab 6.
+camels <- map(local_files, read_delim, show_col_types = FALSE) 
+camels <- power_full_join(camels ,by = 'gauge_id')
+
+#Clean the data using dplyr, EDA (skimr, visdat, ggpubr), and other means to ensure it is in a good form for modeling.
+skimr::skim(camels)
+visdat::vis_miss(camels)
+```
+
+alright so the data needs only a bit of cleaning, only 0.5% of the data is missing! Most of that seems to be from geol_2nd_class. Time to clean...
+
+```{r}
+camels_clean <- camels %>%
+  filter(!is.na(q_mean), !is.na(geol_2nd_class)) %>%
+  drop_na()
+
+skimr::skim(camels_clean)
+visdat::vis_miss(camels_clean)
+
+```
+
+yay, the data is now squeaky clean!
+
+```{r}
+head(camels_clean)
+```
+
+```{r}
+#Be sure to set a seed to ensure the random process is reproducable.
+set.seed(305)
+
+#Use the initial_split() function from the rsample package to split the data. Use 80% of the data for training and 20% for testing.
+data_split <- initial_split(camels_clean, prop = 0.8)
+
+#Use the training() and testing() functions from the rsample package to extract the training and testing data.frames.
+train_data <- training(data_split)
+test_data  <- testing(data_split)
+
+```
+
+```{r}
+glimpse(train_data)
+
+```
+
+
+```{r}
+#Use the recipe() function from the recipes package to create a recipe object. The formula should be based on how you want to predict q_mean and the data should be the training data. Remember to apply any data transformations you deem needed, and be sure not to transform the outcome variable directly in the recipe.
+camels_recipe <- recipe(q_mean ~ ., data = train_data) %>%
+#You should not use gauge_lat and gauge_lon in the recipe as predictors. You can use the step_rm() function to remove them from the recipe while ensureing they persist in any data passed throuhg fit_*
+
+  step_rm(gauge_lat, gauge_lon)
+```
+
+```{r}
+#1.
+#  resample the data using the vfold_cv() function to generate 10 k-fold samples for cross-validation"
+
+set.seed(305)
+folds <- vfold_cv(train_data, v = 10)
+
+
+```
+
+```{r}
+#2
+# Define 3 models that you feel have the best chance of performing well on the data. 
+
+# Random forest
+rf_model <- rand_forest(mtry = 5, min_n = 10, trees = 500) %>%
+  set_engine("ranger") %>%
+  set_mode("regression")
+
+# Decision tree
+dt_model <- decision_tree() %>%
+  set_engine("rpart") %>%
+  set_mode("regression")
+
+# boosted trees
+bt_model <- bag_tree(min_n = tune()) %>%
+  set_engine("rpart", times = 25) %>%
+  set_mode("regression")
+```
+
+```{r}
+# Create the workflow set for regression
+
+
+wf_rf <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(camels_recipe)
+
+wf_dt <- workflow() %>%
+  add_model(dt_model) %>%
+  add_recipe(camels_recipe)
+
+wf_bt <- workflow() %>%
+  add_model(bt_model) %>%
+  add_recipe(camels_recipe)
+
+model_set <- workflow_set(
+  preproc = list(
+    rf_recipe = camels_recipe,
+    dt_recipe = camels_recipe,
+    bt_recipe = camels_recipe
+  ),
+  models = list(
+    rf = rf_model,
+    dt = dt_model,
+    bt = bt_model
+  )
+)
+
+
+# Tune across the set
+set.seed(305)
+model_results <- workflow_map(
+  model_set,
+  resamples = folds,
+  metrics = metric_set(rmse, rsq),
+  grid = 20,         # 20 random grid points
+  verbose = TRUE,
+  seed = 305,
+  fn = "tune_grid"
+)
+```
+
+
+```{r}
+
+#, use autoplot to visualize the results of the workflow set.
+
+autoplot(model_results)
+
+```
+
+
+Based on the visualized metrics, the bagged trees (bag_tree) model clearly demonstrates the best performance overall. In the RMSE panel on the left, its top-performing trials achieve values just under 0.3, outperforming the random forest (around 0.35) and the decision tree (which is slightly above 0.5). Similarly, in the R² panel on the right, the best bagged tree models reach values close to 0.975, slightly higher than the random forest (around 0.96) and significantly better than the decision tree (below 0.93). While the red points for bagged trees represent multiple tuned versions, it's evident that the top-performing configurations outperform the other models in both accuracy and explanatory power.
+
+I chose bagged trees because it achieved the best results.
+
+```{r}
+#Define a tunable model
+tunable_model<- bag_tree(
+  #specify at least 2 hyperparameters to tune using    the tune() function
+  min_n = tune(),         
+  cost_complexity = tune()
+) %>%
+  set_engine("rpart", times = 25) %>%
+  set_mode("regression")
+
+```
+
+```{r}
+#Create a workflow object using the workflow() that adds your recipe and tunable model.
+wf_bag_tune <- workflow() %>%
+  add_model(tunable_model) %>%
+  add_recipe(camels_recipe)
+
+```
+
+```{r}
+#Use the extract_parameter_set_dials(YOUR MODEL WORKFLOW) and save it to an object named dials
+dials <- extract_parameter_set_dials(wf_bag_tune)
+
+# Check the dials$object slot to see the tunable parameters and their ranges.
+dials$object
+```
+
+Between 10^-10 and 10^-1 trees were trimed and between 2-40 observations are required for a split.  This is good.
+
+```{r}
+#Create a SFD Grid Object with 25 predefined combinations.
+SFD_grid <- grid_space_filling(
+  dials,
+  size = 25
+)
+```
+
+```{r}
+model_params <- tune_grid(
+  wf_bag_tune,          
+  resamples = folds,    
+  grid = SFD_grid,      
+  metrics = metric_set(rmse, rsq, mae),   
+  control = control_grid(save_pred = TRUE) 
+)
+```
+
+```{r}
+autoplot(model_params)
+```
+
+best-performing bagged tree models appear in the region with low cost-complexity values (between -10 and -7.5 on the log scale) and smaller minimal node sizes (between 5 and 15). These configurations have the best RMSE and MAE,showing that these models explain nearly all of the variance in the target variable.
+
+```{r}
+#Use the collect_metrics() function to check the skill of the tuned model. Describe what you see, remember dplyr functions like arrange, slice_*, and filter will work on this tibble.
+collect_metrics(model_params)
+
+#Use the show_best() function to show the best performing model based on Mean Absolute Error.
+show_best(model_params, metric = "mae")
+
+#Please interpret the results of the first row of show_best(). What do you see? What hyperparameter set is best for this model, based on MAE?
+
+hp_best <- select_best(model_params, metric = "mae")
+
+#Use the select_best() function to save the best performing hyperparameter set to an object called hp_best.
+collect_metrics(model_params)
+show_best(model_params, metric = "mae")
+hp_best <- select_best(model_params, metric = "mae")
+
+
+```
+The best-performing model based on Mean Absolute Error (MAE) was achieved with a cost_complexity value of 3.16 × 10⁻⁹ and a minimum node size (min_n) of 19. 
+
+```{r}
+# FRun finalize_workflow() based on your workflow and best hyperparmater set to create a final workflow object.
+final_wf <- finalize_workflow(
+  wf_bag_tune,  
+  hp_best     
+)
+```
+
+
+```{r}
+#Use last_fit() to fit the finalized workflow the original split object (output of initial_split()). This will fit the model to the training data and validate it on the testing data.
+final_fit <- last_fit(
+  final_wf,      
+  split = data_split)
+  
+#Use the collect_metrics() function to check the performance of the final model on the test data. This will return a tibble with the metrics for the final model.
+collect_metrics(final_fit)
+```
+The RMSE is approximately 0.359 the model's predictions deviate from the true values by about 0.36 units of q_mean. Meanwhile, the R² value is around 0.947, meaning that the model explains about 94.7% of the variance in the test.  This is very good.
+
+```{r}
+# Use the collect_predictions() function to check the predictions of the final model on the test data. This will return a tibble with the predictions for the final model.
+predictions <- collect_predictions(final_fit)
+
+```
+
+```{r}
+# Use the output of this to create a scatter plot of the predicted values vs the actual values. Use the ggplot2 package to create the plot. This plot should include (1) geom_smooth(method = “lm”) to add the linear fit of predictions and truth (2) geom_abline() to add a 1:1 line (3) nice colors via scale_color_* and (4) accurate labels.
+library(ggplot2)
+
+ggplot(predictions, aes(x = .pred, y = q_mean)) +
+  geom_point(aes(color = .pred), alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE, color = "skyblue", linetype = "dashed") +
+  geom_abline(slope = 1, intercept = 0, color = "deeppink", linetype = "solid") +
+   scale_color_gradient(
+    low = "lightblue",  
+    high = "pink")+
+  labs(
+    title = "Predicted vs Actual Values for Final Bagged Tree Model",
+    x = "Predicted q_mean",
+    y = "Actual q_mean",
+    color = "Predicted Value"
+  ) +
+  theme_dark()
+
+```
+```{r}
+#This full fit can be passed to the augment() function to make predictions on the full, cleaned data. This will return a tibble with the predictions for the full data
+final_model_full <- fit(
+  final_wf,
+  data = camels_clean
+)
+
+#Use the mutate() function to calculate the residuals of the predictions. The residuals are the difference between the predicted values and the actual values squared.
+# 1. Fit the final model to all cleaned data
+final_model_full <- fit(
+  final_wf,
+  data = camels_clean
+)
+
+# 2. Augment the data
+full_predictions <- augment(
+  final_model_full,
+  new_data = camels_clean
+)
+
+# 3. Fix the full_predictions so that q_mean is definitely there
+full_predictions <- full_predictions %>%
+  mutate(q_mean = camels_clean$q_mean)
+
+# 4. Now create the residuals safely
+full_predictions <- full_predictions %>%
+  mutate(residual = (.pred - q_mean)^2)
+
+```
+
+```{r}
+#Use ggplot2 to create a map of the predictions
+
+map_pred <- ggplot(full_predictions, aes(x = gauge_lon, y = gauge_lat)) +
+  geom_point(aes(color = .pred), size = 2) +
+  scale_color_gradient(low = "lightblue", high = "darkred") +
+  coord_fixed(1.3) +
+  labs(
+    title = "Predicted q_mean Across CONUS",
+    color = "Predicted q_mean"
+  ) +
+  theme_minimal()
+#Use ggplot2 to create a map of the residuals.
+map_resid <- ggplot(full_predictions, aes(x = gauge_lon, y = gauge_lat)) +
+  geom_point(aes(color = residual), size = 2) +
+  scale_color_gradient(low = "lightpink", high = "navy") +
+  coord_fixed(1.3) +
+  labs(
+    title = "Residuals Across CONUS",
+    color = "Squared Error"
+  ) +
+  theme_minimal()
+#Use patchwork to combine the two maps into one figure.
+library(patchwork)
+map_pred + map_resid
+```
+
+
+
