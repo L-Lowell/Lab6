@@ -4,7 +4,13 @@ format: html
 editor: visual
 ---
 
+
+
+
 #Question 1: Download data ##Set Up
+
+
+
 
 ```{r}
 library(tidyverse)
@@ -46,9 +52,15 @@ camels <- reduce(camels, power_full_join, by = 'gauge_id')
 list.files("data")
 ```
 
+
+
+
 ###yay it worked! all 6 data files + the PDF are here
 
 #Question 2:Make 2 maps
+
+
+
 
 ```{r}
 p1 <- ggplot(data = camels, aes(x = gauge_lon, y = gauge_lat)) +
@@ -60,7 +72,13 @@ p1 <- ggplot(data = camels, aes(x = gauge_lon, y = gauge_lat)) +
 p1
 ```
 
+
+
+
 ###It looks just like the map in the assignment!
+
+
+
 
 ```{r}
 # First map: Color points by aridity
@@ -83,7 +101,13 @@ p3 <- ggplot(data = camels, aes(x = gauge_lon, y = gauge_lat)) +
 p2 + p3
 ```
 
+
+
+
 ##Model Preparation
+
+
+
 
 ```{r}
 camels |> 
@@ -92,7 +116,13 @@ camels |>
   cor()
 ```
 
+
+
+
 ###Looks like the expected results from the assignments.
+
+
+
 
 ```{r}
 # Create a scatter plot of aridity vs rainfall
@@ -112,7 +142,13 @@ ggplot(camels, aes(x = aridity, y = p_mean)) +
        color = "Mean Flow")
 ```
 
+
+
+
 ###The relationship is seen here just like in the assignment. There is a relationship between rainfall but it is not linear.
+
+
+
 
 ```{r}
 ggplot(camels, aes(x = aridity, y = p_mean)) +
@@ -130,7 +166,13 @@ ggplot(camels, aes(x = aridity, y = p_mean)) +
        color = "Mean Flow")
 ```
 
+
+
+
 ###Log scaled made a more leniar relationship, but clustared and unevenly distributed.
+
+
+
 
 ```{r}
 ggplot(camels, aes(x = aridity, y = p_mean)) +
@@ -151,9 +193,15 @@ ggplot(camels, aes(x = aridity, y = p_mean)) +
        color = "Mean Flow") 
 ```
 
+
+
+
 ###Definitely more evenly spread after being skewed, just like expected.
 
 ##Model building ###set seed for reproducabilty:
+
+
+
 
 ```{r}
 set.seed(123)
@@ -171,7 +219,13 @@ camels_cv <- vfold_cv(camels_train, v = 10)
 ### 10-fold cross validation dataset to help us evaluate multi-model setups.
 ```
 
+
+
+
 ###Separately we have used the recipe function to define a series of data preprocessing steps:
+
+
+
 
 ```{r}
 # Create a recipe to preprocess the data
@@ -184,7 +238,13 @@ rec <-  recipe(logQmean ~ aridity + p_mean, data = camels_train) %>%
   step_naomit(all_predictors(), all_outcomes())
 ```
 
+
+
+
 ###fitting a linear model to the data.
+
+
+
 
 ```{r}
 # Prepare the data
@@ -197,16 +257,28 @@ lm_base <- lm(logQmean ~ aridity * p_mean, data = baked_data)
 summary(lm_base)
 ```
 
+
+
+
 ###Just as expected
+
+
+
 
 ```{r}
 # Sanity Interaction term from recipe ... these should be equal!!
 summary(lm(logQmean ~ aridity + p_mean + aridity_x_p_mean, data = baked_data))
 ```
 
+
+
+
 ###Just as expected again
 
 ##A Model's ability to predict new data (incorrect tests) ###Using the wrong verion augment function to add predicted values to the test data won't work because the recipe has not been applied
+
+
+
 
 ```{r}
 nrow(camels_test)
@@ -214,15 +286,27 @@ nrow(camels_train)
 
 ```
 
+
+
+
 ###look how many more test vs train
+
+
+
 
 ```{r}
 #broom::augment(lm_base, data = camels_test)
 ```
 
+
+
+
 ###As expected, there is an erro, I will put it behind a "\#" so that I can render this assignment.
 
 ###Using the predict function to directly test the data without recipe onject we also see issues
+
+
+
 
 ```{r}
 camels_test$p2 = predict(lm_base, newdata = camels_test)
@@ -240,22 +324,40 @@ ggplot(camels_test, aes(x = p2, y = logQmean)) +
   theme_linedraw()
 ```
 
+
+
+
 ###As expected.
 
 ##Correct version ###prep -\> bake -\> predict; using the prep and bake functions with the recipe object to make a prediction.
+
+
+
 
 ```{r}
 test_data <-  bake(prep(rec), new_data = camels_test)
 test_data$lm_pred <- predict(lm_base, newdata = test_data)
 ```
 
+
+
+
 ##Evaluating the model ###calculates common regression metrics such as RMSE, R-squared, and MAE between the observed and predicted values with metrics.
+
+
+
 
 ```{r}
 metrics(test_data, truth = logQmean, estimate = lm_pred)
 ```
 
+
+
+
 ###model of the observed vs predicted
+
+
+
 
 ```{r}
 ggplot(test_data, aes(x = logQmean, y = lm_pred, colour = aridity)) +
@@ -270,9 +372,15 @@ ggplot(test_data, aes(x = logQmean, y = lm_pred, colour = aridity)) +
        color = "Aridity")
 ```
 
+
+
+
 ###This really was a lot of work for one single fragile graph that can't test other algarithsms.
 
 ##Better approach: Workflow
+
+
+
 
 ```{r}
 # Define model
@@ -300,9 +408,15 @@ summary(extract_fit_engine(lm_wf))$coefficients
 summary(lm_base)$coefficients
 ```
 
+
+
+
 ###Now workflow is embedded in the model!
 
 ##Make Predictions:
+
+
+
 
 ```{r}
 #
@@ -322,7 +436,13 @@ ggplot(lm_data, aes(x = logQmean, y = .pred, colour = aridity)) +
   theme_linedraw()
 ```
 
+
+
+
 ###Boom! an easy to make and more adaptble graph from my data!
+
+
+
 
 ```{r}
 library(baguette)
@@ -356,9 +476,15 @@ ggplot(rf_data, aes(x = logQmean, y = .pred, colour = aridity)) +
   theme_linedraw()
 ```
 
+
+
+
 ### Here is the proof, using the framwork for a completely new model!
 
 ##Workflowset approach
+
+
+
 
 ```{r}
 wf <- workflow_set(list(rec), list(lm_model, rf_model)) %>%
@@ -371,7 +497,13 @@ autoplot(wf)
 rank_results(wf, rank_metric = "rsq", select_best = TRUE)
 ```
 
+
+
+
 #Question 3: Build a xgboost and neural network model using boost_tree
+
+
+
 
 ```{r}
 xgb_model <- boost_tree() %>%
@@ -380,7 +512,13 @@ xgb_model <- boost_tree() %>%
 
 ```
 
+
+
+
 ##build a neural network model using the nnet engine from the baguette package using the bag_mlp function
+
+
+
 
 ```{r}
 nnet_model <- bag_mlp() %>%
@@ -389,7 +527,13 @@ nnet_model <- bag_mlp() %>%
 
 ```
 
+
+
+
 ##Add this to the above workflow
+
+
+
 
 ```{r}
 wf_results <- workflow_set(
@@ -407,21 +551,39 @@ wf_results <- workflow_map(wf_results, "fit_resamples", resamples = camels_cv)
 
 ```
 
+
+
+
 ##Evaluate the model and compare it to the linear and random forest models
+
+
+
 
 ```{r}
 collect_metrics(wf_results)
 ```
 
+
+
+
 ###Now I have the model results, I can run them through an evaluation to see what I will move forward with:
+
+
+
 
 ```{r}
 rank_results(wf_results, rank_metric = "rsq", select_best = TRUE)
 ```
 
+
+
+
 ##Which of the 4 models would you move forward with? ###I will move forward with the neural network model as it performed best in cross-validation.
 
 #Question 4a: Data Prep / Data Splitting ###Borrowing from the workflow presented above, build your own complete ML pipeline to predict mean streamflow using the CAMELS dataset. A successful model will have a R-squared value \> 0.9.
+
+
+
 
 ```{r}
 set.seed(13)
@@ -429,7 +591,13 @@ camels <- camels |>
   mutate(logQmean = log(q_mean))
 ```
 
+
+
+
 ##Data Spliting ###Set a seed for reproducible Create an initial split with 75% used for training and 25% for testing Extract your training and testing sets Build a 10-fold CV dataset as well
+
+
+
 
 ```{r}
 camels_split_4 <- initial_split(camels, prop = 0.75)
@@ -439,6 +607,9 @@ camels_test_4  <- testing(camels_split_4)
 camels_cv_4 <- vfold_cv(camels_train_4, v = 10)
 ```
 
+
+
+
 #Question 4b: Recipe ###Define a formula you want to use to predict logQmean
 
 ##Describe in words why you are choosing the formula you are. Consult the downloaded PDF.
@@ -446,6 +617,9 @@ camels_cv_4 <- vfold_cv(camels_train_4, v = 10)
 ######I chose aridity and p_mean as predictors based the CAMELS showing that precipitation and aridity directly influence streamflow.
 
 ##for the data to help you make this decision. Build a recipe that you feel handles the predictors chosen well
+
+
+
 
 ```{r}
 rec_4 <- recipe(logQmean ~ aridity + p_mean, data = camels_train_4) %>%
@@ -457,7 +631,13 @@ rec_4 <- recipe(logQmean ~ aridity + p_mean, data = camels_train_4) %>%
   step_naomit(all_predictors(), all_outcomes())
 ```
 
+
+
+
 #Question 4c: Define 3 models ###Define a random forest model using the rand_forest function Set the engine to ranger and the mode to regression Define two other models of your choice
+
+
+
 
 ```{r}
 lm_model_4 <- linear_reg() %>%
@@ -472,7 +652,13 @@ rf_model_4 <- rand_forest() %>%
 
 ```
 
+
+
+
 ###I need a thrid model... ###I will move forward with recipe_nnet_model was the most accurate in Q3, so I will use it here.
+
+
+
 
 ```{r}
 nnet_model_4 <- bag_mlp() %>%
@@ -481,7 +667,13 @@ nnet_model_4 <- bag_mlp() %>%
 
 ```
 
+
+
+
 #Question 4d: workflow set ###Create a workflow object Add the recipe Add the model(s) Fit the model to the resamples
+
+
+
 
 ```{r}
 wf_set_4 <- workflow_set(
@@ -496,7 +688,13 @@ wf_set_4 <- workflow_set(
 
 ```
 
+
+
+
 #Question 4e: Evaluation ###Use autoplot and rank_results to compare the models. Describe what model you think is best and why!
+
+
+
 
 ```{r}
 rank_results(wf_set_4, rank_metric = "rsq", select_best = TRUE)
@@ -508,9 +706,15 @@ autoplot(wf_set_4)
 
 ```
 
+
+
+
 ### As we can see, camels_recipe_4_nnet_model is the best model again in terms of rsq.
 
 #Question 4f: Extract and Evaluate ###Build a workflow (not workflow set) with your favorite model, recipe, and training data Use fit to fit all training data to the model Use augment to make predictions on the test data Create a plot of the observed vs predicted values with clear title, axis labels, and a compelling color scale Describe what you think of the results!
+
+
+
 
 ```{r}
 final_nnet_wf_4 <- extract_workflow(wf_set_4, "camels_recipe_4_nnet_model")
@@ -538,4 +742,8 @@ ggplot(nnet_test_preds_4, aes(x = logQmean, y = .pred, color = aridity)) +
   )
 ```
 
+
+
+
 ###I think the results are slighlty scattered but far ess and more evenly spaced than the other prediction models graphed.
+

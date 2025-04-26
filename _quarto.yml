@@ -8,3 +8,6 @@ website:
     left:
       - href: index.qmd
         text: Home
+      - href: hyperparameter-tuning.qmd
+        text: Hyperparameter Tuning
+
