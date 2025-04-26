@@ -431,6 +431,8 @@ q_mean  -0.5817771  0.8865757  1.0000000</code></pre>
 </div>
 <p>###Definitely more evenly spread after being skewed, just like expected.</p>
 <p>##Model building ###set seed for reproducabilty:</p>
+<ul>
+<li><div>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb41"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">123</span>)</span>
 <span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Bad form to perform simple transformations on the outcome variable within a </span></span>
@@ -446,6 +448,8 @@ q_mean  -0.5817771  0.8865757  1.0000000</code></pre>
 <span id="cb41-12"><a href="#cb41-12" aria-hidden="true" tabindex="-1"></a>camels_cv <span class="ot">&lt;-</span> <span class="fu">vfold_cv</span>(camels_train, <span class="at">v =</span> <span class="dv">10</span>)</span>
 <span id="cb41-13"><a href="#cb41-13" aria-hidden="true" tabindex="-1"></a><span class="do">### 10-fold cross validation dataset to help us evaluate multi-model setups.</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
+</div></li>
+</ul>
 <p>###Separately we have used the recipe function to define a series of data preprocessing steps:</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb42"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Create a recipe to preprocess the data</span></span>

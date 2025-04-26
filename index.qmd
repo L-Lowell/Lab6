@@ -155,21 +155,25 @@ ggplot(camels, aes(x = aridity, y = p_mean)) +
 
 ##Model building ###set seed for reproducabilty:
 
-```{r}
-set.seed(123)
-# Bad form to perform simple transformations on the outcome variable within a 
-# recipe. So, we'll do it here.
-camels <- camels |> 
-  mutate(logQmean = log(q_mean))
+-   <div>
 
-# Generate the split
-camels_split <- initial_split(camels, prop = 0.8)
-camels_train <- training(camels_split)
-camels_test  <- testing(camels_split)
-###use 80% of the data for training and 20% for testing with no stratification.
-camels_cv <- vfold_cv(camels_train, v = 10)
-### 10-fold cross validation dataset to help us evaluate multi-model setups.
-```
+    ```{r}
+    set.seed(123)
+    # Bad form to perform simple transformations on the outcome variable within a 
+    # recipe. So, we'll do it here.
+    camels <- camels |> 
+      mutate(logQmean = log(q_mean))
+
+    # Generate the split
+    camels_split <- initial_split(camels, prop = 0.8)
+    camels_train <- training(camels_split)
+    camels_test  <- testing(camels_split)
+    ###use 80% of the data for training and 20% for testing with no stratification.
+    camels_cv <- vfold_cv(camels_train, v = 10)
+    ### 10-fold cross validation dataset to help us evaluate multi-model setups.
+    ```
+
+    </div>
 
 ###Separately we have used the recipe function to define a series of data preprocessing steps:
 

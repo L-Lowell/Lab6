@@ -21,8 +21,20 @@ root  <- 'https://gdex.ucar.edu/dataset/camels/file'
 
 ```{r}
 #Read in the data using map, read_delim() and powerjoin::power_full_join(). If you need a refresher on this please refer to lab 6.
-camels <- map(local_files, read_delim, show_col_types = FALSE) 
-camels <- power_full_join(camels ,by = 'gauge_id')
+local_files <- list.files(
+  path = "data",      
+  pattern = "\\.txt$",      
+  full.names = TRUE
+)
+
+# 2. Read all files into a list of data frames
+camels_list <- map(local_files, read_delim, show_col_types = FALSE)
+
+# 3. Merge them on gauge_id using power_full_join
+camels <- reduce(camels_list, power_full_join, by = "gauge_id")
+
+# 4. Preview the result to confirm it's loaded
+glimpse(camels)
 
 #Clean the data using dplyr, EDA (skimr, visdat, ggpubr), and other means to ensure it is in a good form for modeling.
 skimr::skim(camels)
@@ -289,26 +301,21 @@ final_model_full <- fit(
 )
 
 #Use the mutate() function to calculate the residuals of the predictions. The residuals are the difference between the predicted values and the actual values squared.
-# 1. Fit the final model to all cleaned data
+# Fit the final model to the full cleaned data
 final_model_full <- fit(
   final_wf,
   data = camels_clean
 )
 
-# 2. Augment the data
+# Get predictions and retain true values
 full_predictions <- augment(
   final_model_full,
   new_data = camels_clean
 )
 
-# 3. Fix the full_predictions so that q_mean is definitely there
-full_predictions <- full_predictions %>%
-  mutate(q_mean = camels_clean$q_mean)
-
-# 4. Now create the residuals safely
+# Compute residuals
 full_predictions <- full_predictions %>%
   mutate(residual = (.pred - q_mean)^2)
-
 ```
 
 ```{r}
